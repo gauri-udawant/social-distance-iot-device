@@ -1,0 +1,91 @@
+#include <SPI.h>
+#include <RF24.h>
+
+
+
+#define trigPin 7
+#define echoPin 6
+
+unsigned char txmessage = 1;  //written to rf
+unsigned char rxmessage;  //read from rf
+
+#define SPI_SS   10   // OCR1B - low-active primary drive
+#define BEEPER_OUT 2 //pin used to turn on beeper
+#define VIBRATE_OUT 3
+#define INDICATOR_OUT 4
+RF24 radio(5, 8); // CE, CSN
+
+uint8_t address[][6] = {"0Node","1Node"};
+uint16_t distance = 0;
+uint8_t i;
+
+long ultrasonic_distance(uint8_t triggerPin, uint8_t echoingPin) {
+  long duration; // variable for the duration of sound wave travel
+  int distance; // variable for the distance measurement
+  
+  digitalWrite(triggerPin, LOW); // This sets the trigger pin to LOW whenever this function is called
+  //This is important because it allows the function to act seperately from rest of the code
+  //In case that the trigger pin was already on, then the receiver would have received a pulse from the earlier signal causing a fake alarm
+  delayMicroseconds(2);
+
+  digitalWrite(triggerPin, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(triggerPin, LOW);
+
+  duration = pulseIn(echoingPin, HIGH);
+
+  distance = duration * 0.0343 / 2;
+
+  return(distance);
+}
+
+void setup() {
+  
+  noInterrupts();
+  Serial.begin(115200);
+  Serial.println("Covid badge Sonar");
+
+  pinMode(SPI_SS, OUTPUT);  //must set as output for SPI to work
+  pinMode(BEEPER_OUT, OUTPUT);
+  pinMode(trigPin, OUTPUT);
+  pinMode(echoPin, INPUT);
+
+  digitalWrite(BEEPER_OUT,LOW);
+  interrupts();
+
+  radio.begin();
+  radio.openWritingPipe(address[0]);
+  radio.openReadingPipe(1,address[0]);
+  radio.setPALevel(RF24_PA_MIN);
+  radio.stopListening();
+
+  radio.write(&txmessage, sizeof(txmessage));
+
+  radio.startListening();
+  radio.printDetails();
+
+  delay(50);
+}
+
+void loop() {
+  
+  if (radio.available()) {
+    digitalWrite(INDICATOR_OUT,HIGH);
+    radio.read(&rxmessage, sizeof(rxmessage));
+    radio.stopListening();
+    distance = ultrasonic_distance(trigPin, echoPin);
+    radio.write(&txmessage, sizeof(txmessage));
+    radio.startListening();
+    if(distance > 0 && distance < 200){
+      for(i=0; i<3; i++){
+        digitalWrite(BEEPER_OUT,HIGH);
+        digitalWrite(VIBRATE_OUT,HIGH);
+        delay(25);
+        digitalWrite(BEEPER_OUT,LOW);
+        digitalWrite(VIBRATE_OUT,LOW);
+        delay(25);
+      }
+    }
+  }
+  distance = 0;
+}
